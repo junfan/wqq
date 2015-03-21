@@ -1,4 +1,5 @@
 var request = require('request')
+//require('request-debug')(request);
 var _ = require('lodash')
 var fs = require('fs')
 var Emitter = require('easy-emitter')
@@ -15,13 +16,17 @@ var font = {
   'color':  '000000'
 }
 
+function debuglog(){
+    //console.log.apply(console,arguments)
+}
+
 var QQ = module.exports = function QQ() {
   this.jar = request.jar()
   this.request = request.defaults({
     jar: this.jar,
     headers: {
       'Connection': 'keep-alive',
-      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/39.0.2171.65 Chrome/39.0.2171.65 Safari/537.36'
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.89 Safari/537.36'
     }
   })
   this.store = {}
@@ -37,7 +42,10 @@ var QQ = module.exports = function QQ() {
 
 QQ.prototype._onPoll = function _onPoll(d) {
   if (!d || d.retcode === 103) {
-    if (++this.failCount > 3) this._onDisconnect()
+    if (++this.failCount > 3) {
+        console.error("poll fail 103 more than 3 times")
+        this._onDisconnect()
+    }
     return
   } else this.failCount = 0
   if (d.retcode === 116) {
@@ -52,6 +60,7 @@ QQ.prototype._onPoll = function _onPoll(d) {
     _.extend(d, d.value)
     delete d.value
     if (d.msg_type === 48) { // kick_message
+      console.error("been kicked")
       return _this._onDisconnect()
     }
     if (_.contains([
@@ -170,7 +179,7 @@ QQ.prototype._poll = function _poll(cb) {
     headers: {
       'Referer': 'http://d.web2.qq.com/proxy.html?v=20130916001&callback=1&id=2'
     },
-    timeout: 20000,
+    timeout: 55000,
     json: true
   }, function (e, r, d) {
     cb(e, d)
@@ -457,6 +466,7 @@ QQ.prototype.login = function login(password, vcode, cb) {
   this.form.vcode = vcode || ''
   this._login(function (e, d) {
     var m = d.match(/'([^']*)','([^']*)','([^']*)','([^']*)','([^']*)',\s*'([^']*)'/)
+    debuglog("登录返回:"+d)
     if (!/成功/.test(m[5])) return cb(e, false)
     _this.store.nick = m[6]
     _this.request({
@@ -513,24 +523,25 @@ QQ.prototype.login = function login(password, vcode, cb) {
 QQ.prototype._login = function _login(cb) {
   var s = this.store
   var f = this.form
-  var vcode = s.hasImg ? f.vcode : s.vcode
+  //目前直接使用s.vcode可行
+  //var vcode = s.hasImg ? f.vcode : s.vcode
   this.request({
-    url: 'https://ssl.ptlogin2.qq.com/login?webqq_type=10&remember_uin=1&login2qq=1&u1=http%3A%2F%2Fw.qq.com%2Fproxy.html%3Flogin2qq%3D1%26webqq_type%3D10&h=1&ptredirect=0&ptlang=2052&daid=164&from_ui=1&pttype=1&dumy=&fp=loginerroralert&action=0-20-410040&mibao_css=m_webqq&t=1&g=1&js_type=0&js_ver=10109&login_sig=Efi2l6vPodHobOwrxFL8Q6T8UTg5obqH13BcdS5u3N46ezVr3RyUHjCDEcQkcIoc&pt_vcode_v1=0',
-    qs: {
-      u: f.account,
-      p: encrypt(f.password, s.salt, vcode),
-      verifycode: vcode,
-      pt_verifysession_v1: s.verifysession,
-      pt_randsalt: s.isRandSalt || 0,
-      aid: appid
-    },
-    headers: {
-      'Referer': 'https://ui.ptlogin2.qq.com/cgi-bin/login?daid=164&target=self&style=16&mibao_css=m_webqq' +
-        '&appid=' + appid + '&enable_qlogin=0&no_verifyimg=1&s_url=http%3A%2F%2Fw.qq.com%2Fproxy.html&f_url=loginerroralert&strong_login=1&login_state=10&t=20131024001'
-    }
-  }, function (e, r, d) {
-    cb(e, d)
+        url: 'https://ssl.ptlogin2.qq.com/login?webqq_type=10&remember_uin=1&login2qq=1&u1=http%3A%2F%2Fw.qq.com%2Fproxy.html%3Flogin2qq%3D1%26webqq_type%3D10&h=1&ptredirect=0&ptlang=2052&daid=164&from_ui=1&pttype=1&dumy=&fp=loginerroralert&action=0-69-58785&mibao_css=m_webqq&t=1&g=1&js_type=0&js_ver=10116&pt_vcode_v1=0&login_sig='+this.login_sig+"&pt_verifysession_v1="+s.verifysession+"&p="+encrypt(f.password,s.salt,s.vcode),
+        qs: {
+          u: f.account,
+          verifycode: s.vcode,
+          pt_randsalt: s.isRandSalt || 0,
+          aid: appid
+        },
+        headers: {
+          'Referer': 'https://ui.ptlogin2.qq.com/cgi-bin/login?daid=164&target=self&style=16&mibao_css=m_webqq' +
+            '&appid=' + appid + '&enable_qlogin=0&no_verifyimg=1&s_url=http%3A%2F%2Fw.qq.com%2Fproxy.html&f_url=loginerroralert&strong_login=1&login_state=10&t=20131024001'
+        }
+      }, function (e, r, d) {
+        cb(e, d)
   })
+
+
 }
 
 QQ.prototype.getVcode = function getVcode(account, cb) {
@@ -538,27 +549,32 @@ QQ.prototype.getVcode = function getVcode(account, cb) {
   var s = this.store
   this.form.account = account || ''
   this._checkVcode(function (e, d) {
+    //ptui_checkVC('1','y35CVJ1UBM_NdhhCqZ9iHKl9BwA3TQpB','\x00\x00\x00\x00\x76\x37\x91\x00','','0');
+    debuglog("检查验证码返回:"+d)
     var m = d.match(/'([^']*)','([^']*)','([^']*)','([^']*)','([^']*)'/)
     s.vcode = m[2]
+    s.cap_cd = m[2]
     s.salt = Function('return "' + m[3] + '"')()
     s.verifysession = m[4] || _this._getVerifysession()
     s.isRandSalt = m[5]
     s.hasImg = m[1] === '1'
     if (!s.hasImg) return cb(e)
-    _this._getVcodeImage(function (e, b) {
-      s.verifysession = _this._getVerifysession()
-      cb(e, b)
+    _this._getVcodeImage(function (e,b){
+        s.verifysession = _this._getVerifysession()
+        cb(e, b)
     })
   })
 }
 
 QQ.prototype._getVcodeImage = function _getVcodeImage(cb) {
+  var that=this;
   this.request({
     url: 'https://ssl.captcha.qq.com/getimage',
     qs: {
       uin: this.form.account,
       r: Math.random(),
-      aid: appid
+      aid: appid,
+      cap_cd:this.store.cap_cd
     },
     encoding: null
   }, function (e, r, b) {
@@ -567,22 +583,37 @@ QQ.prototype._getVcodeImage = function _getVcodeImage(cb) {
 }
 
 QQ.prototype._checkVcode = function _checkVcode(cb) {
+
+  var that =this;
   this.request({
-    url: 'https://ssl.ptlogin2.qq.com/check?pt_tea=1&js_ver=10109&js_type=0&login_sig=Hr5gU3cuTeCKinsyESg7XnoaYL*TwxclDHeJQbdol197nlPbIPQPQ*8AR1RuN1-7&u1=http%3A%2F%2Fw.qq.com%2Fproxy.html',
-    qs: {
-      uin: this.form.account,
-      r: Math.random(),
-      appid: appid
-    },
-    headers: {
-      'Accept': '*/*',
-      'Accept-Encoding': 'gzip, deflate, sdch',
-      'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6',
-      'Host': 'ssl.ptlogin2.qq.com',
-      'Referer': 'https://ui.ptlogin2.qq.com/cgi-bin/login?daid=164&target=self&style=16&mibao_css=m_webqq&appid=&enable_qlogin=0&no_verifyimg=1&s_url=http%3A%2F%2Fw.qq.com%2Fproxy.html&f_url=loginerroralert&strong_login=1&login_state=10&t=20131024001',
-    }
-  }, function (e, r, d) {
-    cb(e, d)
+      url:"https://ui.ptlogin2.qq.com/cgi-bin/login?daid=164&target=self&style=16&mibao_css=m_webqq&appid=501004106&enable_qlogin=0&no_verifyimg=1&s_url=http%3A%2F%2Fw.qq.com%2Fproxy.html&f_url=loginerroralert&strong_login=1&login_state=10&t=20131024001",
+      headers: {
+          'Accept': '*/*',
+          'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6',
+          'Referer': 'http://w.qq.com/'
+      }
+  },function(e,r,d){
+      var m = d.match(/var g_login_sig=encodeURIComponent\("([^"]*)"\)/)
+      that.login_sig = encodeURIComponent(m[1]);
+    
+      that.request({
+        url: 'https://ssl.ptlogin2.qq.com/check?pt_tea=1&js_ver=10116&js_type=0&u1=http%3A%2F%2Fw.qq.com%2Fproxy.html&login_sig='+that.login_sig,
+        qs: {
+          uin: that.form.account,
+          r: Math.random(),
+          appid: appid
+        },
+        headers: {
+          'Cookie': "chkuin="+that.form.account,
+          'Accept': '*/*',
+          'Accept-Encoding': 'gzip, deflate, sdch',
+          'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6',
+          'Host': 'ssl.ptlogin2.qq.com',
+          'Referer': 'https://ui.ptlogin2.qq.com/cgi-bin/login?daid=164&target=self&style=16&mibao_css=m_webqq&appid=501004106&enable_qlogin=0&no_verifyimg=1&s_url=http%3A%2F%2Fw.qq.com%2Fproxy.html&f_url=loginerroralert&strong_login=1&login_state=10&t=20131024001',
+        }
+      }, function (e, r, d) {
+        cb(e, d)
+      })
   })
 }
 
@@ -591,6 +622,8 @@ QQ.prototype._getPtwebqq = function _getPtwebqq() {
   var c = _.find(cs, { key: 'ptwebqq' })
   return c ? c.value : ''
 }
+
+
 QQ.prototype._getVerifysession = function _getVerifysession() {
   var cs = this.jar.getCookies('https://ssl.ptlogin2.qq.com')
   var c = _.find(cs, { key: 'verifysession' })
